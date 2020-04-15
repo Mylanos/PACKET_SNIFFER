@@ -1,0 +1,24 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/marekziska/Desktop/IPK/projekt2/sniffer/src/main.c
+stdio.h
+-
+stdlib.h
+-
+pcap/pcap.h
+-
+getopt.h
+-
+sys/socket.h
+-
+string.h
+-
+ctype.h
+-
+
