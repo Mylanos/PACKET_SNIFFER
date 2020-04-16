@@ -7,7 +7,6 @@
 #include <ctype.h>
 #include <time.h>
 #include <netinet/tcp.h>
-#include <netinet/if_ether.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
 #include <netinet/ip_icmp.h>
@@ -128,7 +127,7 @@ int main(int argc, char **argv) {
             printf("ERROR -> got %s ", errbuf);
             exit(EXIT_FAILURE);
         }
-/*
+
         //https://www.tcpdump.org/linktypes.html on my device not supported by utun0
         if(pcap_datalink(od) != DLT_EN10MB) {
             fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n", interface);
@@ -139,11 +138,12 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Couldn't parse filter %s: %s\n", port, pcap_geterr(od));
             exit(EXIT_FAILURE);
         }
-
+/*
         if (pcap_setfilter(od, &fp) == -1) {
             fprintf(stderr, "Couldn't install filter %s: %s\n", port, pcap_geterr(od));
             exit(EXIT_FAILURE);
-        }*/
+        }
+        */
         int i = 0;
         int n = 0;
         int size;
@@ -151,7 +151,7 @@ int main(int argc, char **argv) {
         char buff[100], buffer[BUF_SIZE];
         struct tm* tm_info;
 
-        while((retCode = pcap_next_ex(od, &header, &packet)) >= 0 && n < 10){
+        while((retCode = pcap_next_ex(od, &header, &packet)) >= 0){
             size = header->len;
             tm_info = localtime(&header->ts.tv_sec);
 
@@ -159,18 +159,27 @@ int main(int argc, char **argv) {
                 continue;
             }
 
-            struct iphdr *iph = (struct iphdr*)(packet + sizeof(struct ethhdr*));
-            printf("protocol %d", iph->protocol);
+            struct ip *iph = (struct ip*)(packet + sizeof(struct ethhdr*));
 
-            strftime(buff, 100, "%H:%M:%S", tm_info);
-            printf("%s.%06d \n", buff, header->ts.tv_usec);
+            switch ((int)iph->ip_p){
 
-            for (i=1; (i < header->caplen + 1 ) ; i++)
-            {
-                printf("%.2x ", packet[i-1]);
-                if ( (i % LINE_LEN) == 0) printf("\n");
+                case 6:
+                case 17:
+                    strftime(buff, 100, "%H:%M:%S", tm_info);
+                    printf("%s.%06d \n", buff, header->ts.tv_usec);
+
+                    for (i=1; (i < header->caplen + 1 ) ; i++)
+                    {
+                        printf("%.2x ", packet[i-1]);
+                        if ( (i % LINE_LEN) == 0) printf("\n");
+                    }
+                    printf("\n\n");
+                    break;
+                default:
+                    break;
+
             }
-            printf("\n\n");
+            printf("PROTOCOL: %hhu | TYPE OF SERVICE %hhu\n\n", iph->ip_p, iph->ip_tos);
             n++;
         }
 
