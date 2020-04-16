@@ -5,6 +5,13 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
+#include <netinet/tcp.h>
+#include <netinet/if_ether.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <netinet/ip_icmp.h>
+
 
 #define BUF_SIZE 100
 #define PORT_MAX_BUFFER 20
@@ -13,6 +20,8 @@ pcap_t * od;
 static int udp_flag;
 static int tcp_flag;
 
+
+#define LINE_LEN 16
 
 int isNotNumber(char* s){
     for (int i = 0; i < strlen(s); i++)
@@ -32,7 +41,7 @@ int main(int argc, char **argv) {
     struct bpf_program fp;		            /* Compiled filter expression */
     bpf_u_int32 mask;		                /* The netmask of our sniffing device */
     bpf_u_int32 net;		                /* The IP of our sniffing device */
-    struct pcap_pkthdr header;	            /* The header that pcap gives us */
+    struct pcap_pkthdr *header;	            /* The header that pcap gives us */
     const u_char *packet;		            /* The actual packet */
 
     //parsing args
@@ -109,8 +118,6 @@ int main(int argc, char **argv) {
     }
 
     if(strcmp(interface, "") != 0){
-        printf("%s", port);
-
         if (pcap_lookupnet(interface, &net, &mask, errbuf) == -1) {
             fprintf(stderr, "ERROR -> Can't determine IPv4 network number and mask for device %s\n", interface);
             net = 0;
@@ -121,7 +128,7 @@ int main(int argc, char **argv) {
             printf("ERROR -> got %s ", errbuf);
             exit(EXIT_FAILURE);
         }
-
+/*
         //https://www.tcpdump.org/linktypes.html on my device not supported by utun0
         if(pcap_datalink(od) != DLT_EN10MB) {
             fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n", interface);
@@ -136,10 +143,40 @@ int main(int argc, char **argv) {
         if (pcap_setfilter(od, &fp) == -1) {
             fprintf(stderr, "Couldn't install filter %s: %s\n", port, pcap_geterr(od));
             exit(EXIT_FAILURE);
+        }*/
+        int i = 0;
+        int n = 0;
+        int size;
+        int retCode = 0;
+        char buff[100], buffer[BUF_SIZE];
+        struct tm* tm_info;
+
+        while((retCode = pcap_next_ex(od, &header, &packet)) >= 0 && n < 10){
+            size = header->len;
+            tm_info = localtime(&header->ts.tv_sec);
+
+            if(retCode == 0){
+                continue;
+            }
+
+            struct iphdr *iph = (struct iphdr*)(packet + sizeof(struct ethhdr*));
+            printf("protocol %d", iph->protocol);
+
+            strftime(buff, 100, "%H:%M:%S", tm_info);
+            printf("%s.%06d \n", buff, header->ts.tv_usec);
+
+            for (i=1; (i < header->caplen + 1 ) ; i++)
+            {
+                printf("%.2x ", packet[i-1]);
+                if ( (i % LINE_LEN) == 0) printf("\n");
+            }
+            printf("\n\n");
+            n++;
         }
 
-        packet = pcap_next(od, &header);
-        printf("Jacked a packet with length of [%d]\n", header.len);
+       /* packet = pcap_next(od, &header);
+        printf("Jacked a packet with length of %d [%d]\n", header.ts.tv_usec, header.len);
+        printf("packet content %s", packet);*/
         pcap_close(od);
     }
     else{
@@ -157,38 +194,6 @@ int main(int argc, char **argv) {
 
         pcap_freealldevs(alldevs);
     }
-    /*
-    dev = pcap_lookupdev(errbuf);
-    if (dev == NULL) {
-        fprintf(stderr, "Couldn't find default device: %s\n", errbuf);
-        return(2);
-    }
-    if(pcap_open_live("eth1", 10, 10, 10, errbuf)) {
-        printf("Device: %s\n", dev);
-
-    }
-    else{
-        printf("Inactive interface! %s", "eth1");
-    }*/
     return 0;
 
-
-    /*
-     *
-     * socklen_t peer_addr_len;
-    struct sockaddr peer_addr;
-    int sock_raw = socket(AF_INET , SOCK_RAW , IPPROTO_TCP);
-    if(sock_raw < 0)
-    {
-        printf("Socket Error\n");
-        return 1;
-    }
-    char buffer[BUF_SIZE];
-
-    while(1)
-    {
-        ssize_t data_size = recvfrom(sock_raw , buffer , 65536 , 0 , (struct sockaddr *) &peer_addr , &peer_addr_len);
-        cout << data_size;
-    }
-    return 0;*/
 }

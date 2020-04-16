@@ -21,4 +21,16 @@ string.h
 -
 ctype.h
 -
+time.h
+-
+netinet/tcp.h
+-
+netinet/if_ether.h
+-
+netinet/ip.h
+-
+netinet/udp.h
+-
+netinet/ip_icmp.h
+-
 
