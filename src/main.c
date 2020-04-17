@@ -9,6 +9,7 @@
 #include <time.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
+#include <netinet/udp.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 
@@ -21,6 +22,8 @@ pcap_t * od;
 static int udp_flag;
 static int tcp_flag;
 
+
+//TODO parsing only to tcp type ports, do it for udp also
 
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet);
 
@@ -126,11 +129,12 @@ int main(int argc, char **argv) {
             mask = 0;
         }
 
-        //1000 timeout
+        //1000 timeout tcpdump uses this ammount
         if(!(od = pcap_open_live(interface, BUFSIZ, 1, 1000, errbuf))){
             printf("ERROR -> got %s ", errbuf);
             exit(EXIT_FAILURE);
         }
+
 
         //https://www.tcpdump.org/linktypes.html on my device not supported by utun0
         if(pcap_datalink(od) != DLT_EN10MB) {
@@ -145,8 +149,6 @@ int main(int argc, char **argv) {
             sprintf(filter, "tcp ");
         }
         else{
-            printf("itsheer\n\n\n");
-
             sprintf(filter, "udp ");
         }
         if(strcmp(port, "") != 0){
@@ -163,9 +165,7 @@ int main(int argc, char **argv) {
             exit(EXIT_FAILURE);
         }
 
-
         pcap_loop(od, num_of_packets, process_packet, NULL);
-
         pcap_close(od);
     }
     else{
@@ -196,10 +196,12 @@ int main(int argc, char **argv) {
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet){
     struct ip *ip;
     struct tcphdr *tcp;
+    struct udphdr *udp;
     int k = 0;
     struct hostent *hp;
     char *source_addr;
     char *destination_addr;
+    int destination_port, source_port;
     char buff[BUF_SIZE];
     u_int size_ip;
 
@@ -210,8 +212,17 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     ip = (struct ip*)(packet + SIZE_ETHERNET);
     size_ip = ip->ip_hl*4;
 
-    //typecast packet to tcp header
-    tcp = (struct tcphdr*)(packet + SIZE_ETHERNET + size_ip);
+    //typecast packet to tcp/udp header according to ip's protocol
+    if(ip->ip_p == IPPROTO_TCP){
+        tcp = (struct tcphdr*)(packet + SIZE_ETHERNET + size_ip);
+        destination_port = ntohs(tcp->th_dport);
+        source_port = ntohs(tcp->th_sport);
+    }
+    else{
+        udp = (struct udphdr*)(packet + SIZE_ETHERNET + size_ip);
+        destination_port = ntohs(udp->uh_dport);
+        source_port = ntohs(udp->uh_sport);
+    }
 
     //try to resolve source IP address
     if((hp = gethostbyaddr((char *) &ip->ip_src, sizeof(ip->ip_src), AF_INET)) == NULL){
@@ -230,9 +241,9 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     /*packets time stamp*/
     printf("%s.%06d ", buff, pkthdr->ts.tv_usec);
     /*source address/host name and source port*/
-    printf("%s : %d > ", source_addr, ntohs(tcp->th_sport));
+    printf("%s : %d > ", source_addr, source_port);
     /*destination address/host name and destination port*/
-    printf("%s : %d\n", destination_addr, ntohs(tcp->th_dport));
+    printf("%s : %d\n", destination_addr, destination_port);
     /*print data*/
     for (int i = 0; i < pkthdr->len; i++) {
         if ((i % LINE_LEN) == 0) {
