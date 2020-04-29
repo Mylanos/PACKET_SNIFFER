@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
     char errbuf[PCAP_ERRBUF_SIZE];          /* Buffer for possible pcap errors */
     int c;                                  /* Argument parsing variable */
     char port[PORT_MAX_BUFFER] = "";        /* Port to be listened // on skus to aj bez port v stringu */
-    int num_of_packets = -1;                /* Ammount of packets to be shown */
+    int num_of_packets = 1;                /* Ammount of packets to be shown */
     int digit_optind = 0;                   /* PREBYTOCNA SOMARINA */
     char interface[BUF_SIZE] = "";          /* Sniffing interface buffer */
     char filter[BUF_SIZE] = "";             /* Sniffing interface buffer */
@@ -170,17 +170,19 @@ int main(int argc, char **argv) {
     }
     else{
         pcap_if_t *alldevs, *dev;
-        int i = 1;
+        int i = 2;
         if(pcap_findalldevs(&alldevs, errbuf) == -1){
             fprintf(stderr,"ERROR -> : %s\n", errbuf);
             exit(EXIT_FAILURE);
         }
-        printf("Argument specificating interface supposed to be sniffed, was not entered!\nList of active interfaces:\n");
-        for(dev=alldevs; dev != NULL; dev=dev->next){
-                printf("\t\t\t\t\t\t\t%d. = %s \n", i, dev->name);
+        printf("Argument specifying interface supposed to be sniffed, was not entered!\n"
+               "For further help with sniffer's launch options, use -h or --help argument.\n"
+               "List of active interfaces: 1. = %s\n", alldevs->name);
+
+        for(dev=alldevs->next; dev != NULL; dev=dev->next){
+                printf("\t\t\t   %d. = %s \n", i, dev->name);
                 i++;
         }
-
         pcap_freealldevs(alldevs);
     }
     return 0;
