@@ -10,11 +10,13 @@
 #include <time.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include <netinet/udp.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <netinet/if_ether.h>
 
-#define BUF_SIZE 100
+#define BUF_SIZE 1000
 #define PORT_MAX_BUFFER 20
 #define SIZE_ETHERNET 14
 #define LINE_LEN 16
@@ -80,7 +82,7 @@ int main(int argc, char **argv) {
                 {0,0,                           0,  0 }
         };
 
-        c = getopt_long_only(argc, argv, "p:tun", long_options, &option_index);
+        c = getopt_long(argc, argv, "p:tun", long_options, &option_index);
 
         //end of options detected
         if (c == -1){
@@ -145,7 +147,7 @@ int main(int argc, char **argv) {
 
         //https://www.tcpdump.org/linktypes.html on my device not supported by utun0
         link_type = pcap_datalink(od);
-        if(link_type != DLT_EN10MB) {
+        if(link_type != DLT_EN10MB){
             fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n", interface);
             exit(EXIT_FAILURE);
         }
@@ -270,6 +272,8 @@ void print_packet(int packet_len,const u_char *packet){
  * @param packet
  */
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet){
+    struct ether_header *eptr;
+    eptr = (struct ether_header *) packet;
     struct ip *ip;
     struct tcphdr *tcp;
     struct udphdr *udp;
@@ -278,35 +282,52 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     char *destination_addr;
     int destination_port, source_port;
     char buff[BUF_SIZE];
+    short family;
     u_int size_ip;
-
     struct tm* tm_info = localtime(&pkthdr->ts.tv_sec);
     strftime(buff, 100, "%H:%M:%S", tm_info);
 
     //typecast packet to ip header
-    ip = (struct ip*)(packet + SIZE_ETHERNET);
-    size_ip = ip->ip_hl*4;
+    ip = (struct ip*)(packet + sizeof(struct ether_header));
+    if(ntohs(eptr->ether_type) == ETHERTYPE_IPV6){
+        family = AF_INET6;
+    }
+    else{
+        family = AF_INET;
+    }
+
+    const struct sockaddr_in sockaddr_src = { .sin_family = family, .sin_addr = ip->ip_src};
+    const struct sockaddr_in sockaddr_dest = { .sin_family = family, .sin_addr = ip->ip_dst};
 
     //typecast packet to tcp/udp header according to ip's protocol
     if(ip->ip_p == IPPROTO_TCP){
-        tcp = (struct tcphdr*)(packet + SIZE_ETHERNET + size_ip);
+        tcp = (struct tcphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
         destination_port = ntohs(tcp->th_dport);
         source_port = ntohs(tcp->th_sport);
     }
     else{
-        udp = (struct udphdr*)(packet + SIZE_ETHERNET + size_ip);
+        udp = (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
         destination_port = ntohs(udp->uh_dport);
         source_port = ntohs(udp->uh_sport);
     }
+/*
+    if(getnameinfo((struct sockaddr*)&sockaddr_src, sizeof(struct sockaddr), source_addr, BUF_SIZE, 0, 0, 0)){
+        strcat(source_addr, inet_ntoa(ip->ip_src));
+    }
+    if(getnameinfo((struct sockaddr*)&sockaddr_dest, sizeof(struct sockaddr), destination_addr, BUF_SIZE, 0, 0, 0)){
+         strcat(destination_addr, inet_ntoa(ip->ip_dst));
+    }
+*/
 
     //try to resolve source IP address
-    if((hp = gethostbyaddr((char *) &ip->ip_src, sizeof(ip->ip_src), AF_INET)) == NULL){
+    if((hp = gethostbyaddr((char *) &ip->ip_src, sizeof(ip->ip_src), family)) == NULL){
         source_addr = inet_ntoa(ip->ip_src);
     }
     else{
         source_addr = hp->h_name;
     }
-    if((hp = gethostbyaddr((char *) &ip->ip_dst, sizeof(ip->ip_dst), AF_INET)) == NULL){
+
+    if((hp = gethostbyaddr((char *) &ip->ip_dst, sizeof(ip->ip_dst), family)) == NULL){
         destination_addr = inet_ntoa(ip->ip_dst);
     }
     else{
@@ -314,11 +335,11 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     }
 
     /*packets time stamp*/
-    printf("%s.%06d ", buff, pkthdr->ts.tv_usec);
+    printf("%s.%06d ", buff, (int)pkthdr->ts.tv_usec);
     /*source address/host name and source port*/
     printf("%s : %d > ", source_addr, source_port);
     /*destination address/host name and destination port*/
-    printf("%s : %d  LEN: %d \n", destination_addr, destination_port, pkthdr->len);
+    printf("%s : %d\n", destination_addr, destination_port);
     /*print packet*/
     print_packet(pkthdr->len, packet);
     printf("\n\n");
