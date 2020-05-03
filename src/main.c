@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <pcap/pcap.h>
 #include <getopt.h>
 #include <sys/socket.h>
@@ -24,6 +25,9 @@ static int tcp_flag;
 
 
 //TODO parsing only to tcp type ports, do it for udp also
+//  (udp or tcp) and port 53
+//  protocol extension?
+//  cleanup
 
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet);
 
@@ -54,14 +58,18 @@ int main(int argc, char **argv) {
     bpf_u_int32 net;		                /* The IP of our sniffing device */
     struct pcap_pkthdr *header;	            /* The header that pcap gives us */
     const u_char *packet;		            /* The actual packet */
+    int link_type;                          /* interface's link-level header */
 
-    //parsing args
+    /** Parsing arguments
+     * inspirations from source: https://www.gnu.org/software/libc/manual/html_node/Getopt-Long-Option-Example.html (manpage)
+     */
     while (1) {
         int this_option_optind = optind ? optind : 1;
         int option_index = 0;
         static struct option long_options[] = {
                 {"i",       required_argument,          0,  'i' },
                 {"p",       required_argument,          0,  'p' },
+                {"port",       required_argument,       0,  'p' },
                 {"t",       no_argument,              &tcp_flag,  't' },
                 {"tcp",     no_argument,              &tcp_flag,  't' },
                 {"u",       no_argument,              &udp_flag,  'u'},
@@ -104,7 +112,6 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "ERROR -> got %s: Expected integer!", optarg);
                     exit(EXIT_FAILURE);
                 }
-                printf("jouuu %s\n", tmpptr);
                 break;
             case '?':
                 //optopt argument pristup
@@ -123,11 +130,11 @@ int main(int argc, char **argv) {
     }
 
     if(strcmp(interface, "") != 0){
-        if (pcap_lookupnet(interface, &net, &mask, errbuf) == -1) {
+      /*  if (pcap_lookupnet(interface, &net, &mask, errbuf) == -1) {
             fprintf(stderr, "ERROR -> Can't determine IPv4 network number and mask for device %s\n", interface);
             net = 0;
             mask = 0;
-        }
+        }*/
 
         //1000 timeout tcpdump uses this ammount
         if(!(od = pcap_open_live(interface, BUFSIZ, 1, 1000, errbuf))){
@@ -137,13 +144,14 @@ int main(int argc, char **argv) {
 
 
         //https://www.tcpdump.org/linktypes.html on my device not supported by utun0
-        if(pcap_datalink(od) != DLT_EN10MB) {
+        link_type = pcap_datalink(od);
+        if(link_type != DLT_EN10MB) {
             fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n", interface);
             exit(EXIT_FAILURE);
         }
 
         if((tcp_flag && udp_flag) || (!tcp_flag && !udp_flag)){
-            sprintf(filter, "udp or tcp ");
+            sprintf(filter, "(udp or tcp) ");
         }
         else if(tcp_flag){
             sprintf(filter, "tcp ");
@@ -152,6 +160,7 @@ int main(int argc, char **argv) {
             sprintf(filter, "udp ");
         }
         if(strcmp(port, "") != 0){
+            strcat(filter, " and ");
             strcat(filter, port);
         }
 
@@ -189,6 +198,71 @@ int main(int argc, char **argv) {
 
 }
 
+
+void print_packet_ascii(int n, int i,const u_char *packet, int print_counter){
+    if (print_counter == 8) {
+        printf(" ");
+    }
+    if (isprint(packet[i - n]))
+        printf("%c", packet[i - n]);
+    else
+        printf(".");
+}
+
+void print_packet(int packet_len,const u_char *packet){
+    //z dôvodu hraničiacich bytov
+    int print_bytes_counter = 0;
+    int k = 0, i;
+
+    for (i = 0; i <= packet_len; i++) {
+        bool approaching_end = (packet_len - i == 0) && (print_bytes_counter % LINE_LEN != 0);
+        int print_ascii_counter = 0;
+        if ((i % LINE_LEN) == 0 || approaching_end) {
+            if(i != 0){
+                if(!approaching_end){
+                    printf("\t");
+                }
+                bool printed_space = false;
+                /*print data as ascii characters or '.'*/
+                for(int n = LINE_LEN; n > 0; n--) {
+                    if(approaching_end){
+                        int bytes_left = packet_len % LINE_LEN;
+                        if(n > bytes_left){
+                            printf("   ");
+                        }
+                        else{
+                            if(n == bytes_left){
+                                printf("\t");
+                            }
+                            print_packet_ascii(n, i, packet, print_ascii_counter);
+                            print_ascii_counter++;
+                        }
+                    }
+                    else{
+                        print_packet_ascii(n, i, packet, print_ascii_counter);
+                        print_ascii_counter++;
+                    }
+                }
+            }
+            if(approaching_end){
+                break;
+            }
+            printf("\n0x%03x0\t", k);
+            k++;
+        }
+        if(i % 8 == 0){
+            printf(" ");
+        }
+        printf("%02x ", packet[i]);
+        print_bytes_counter++;
+    }
+    if(i % LINE_LEN != 0){
+        for(int j = 0; j < i; j++){
+
+        }
+    }
+}
+
 /**
  *
  * @param user
@@ -199,7 +273,6 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     struct ip *ip;
     struct tcphdr *tcp;
     struct udphdr *udp;
-    int k = 0;
     struct hostent *hp;
     char *source_addr;
     char *destination_addr;
@@ -245,28 +318,9 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     /*source address/host name and source port*/
     printf("%s : %d > ", source_addr, source_port);
     /*destination address/host name and destination port*/
-    printf("%s : %d\n", destination_addr, destination_port);
-    /*print data*/
-    for (int i = 0; i < pkthdr->len; i++) {
-        if ((i % LINE_LEN) == 0) {
-            if(i != 0){
-                printf("\t");
-                /*print data as ascii characters or '.'*/
-                for(int n = LINE_LEN; n >= 0; n--) {
-                    if(isprint(packet[i-n]))
-                        printf("%c", packet[i-n]);
-                    else
-                        printf(".");
-                }
-            }
-            printf("\n0x%03x0\t", k);
-            k++;
-        }
-        if((i % (LINE_LEN/2)) == 0){
-            printf(" ");
-        }
-        printf("%02x ", packet[i]);
-    }
+    printf("%s : %d  LEN: %d \n", destination_addr, destination_port, pkthdr->len);
+    /*print packet*/
+    print_packet(pkthdr->len, packet);
     printf("\n\n");
 
 }
