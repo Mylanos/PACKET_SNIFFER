@@ -15,6 +15,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/if_ether.h>
+#include "sniffer.h"
 
 #define BUF_SIZE 1000
 #define PORT_MAX_BUFFER 20
@@ -31,17 +32,16 @@ static int tcp_flag;
 //  protocol extension?
 //  cleanup
 
-void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet);
 
-
-int isNotNumber(char* s){
+int isNotNumber(char* s) {
     for (int i = 0; i < strlen(s); i++)
-        if (isdigit(s[i]) == 0)
+        if (isdigit(s[i]) == 0) {
             return 1;
+        }
     return 0;
 }
 
-void print_help(){
+void print_help() {
     printf("./ipk-sniffer -i rozhraní [-p port] [--tcp|-t] [--udp|-u] [-n num]");
 }
 
@@ -179,7 +179,7 @@ int main(int argc, char **argv) {
         pcap_loop(od, num_of_packets, process_packet, NULL);
         pcap_close(od);
     }
-    else{
+    else {
         pcap_if_t *alldevs, *dev;
         int i = 2;
         if(pcap_findalldevs(&alldevs, errbuf) == -1){
@@ -201,7 +201,7 @@ int main(int argc, char **argv) {
 }
 
 
-void print_packet_ascii(int n, int i,const u_char *packet, int print_counter){
+void print_packet_ascii(int n, int i,const u_char *packet, int print_counter) {
     if (print_counter == 8) {
         printf(" ");
     }
@@ -211,7 +211,7 @@ void print_packet_ascii(int n, int i,const u_char *packet, int print_counter){
         printf(".");
 }
 
-void print_packet(int packet_len,const u_char *packet){
+void print_packet(int packet_len,const u_char *packet) {
     //z dôvodu hraničiacich bytov
     int print_bytes_counter = 0;
     int k = 0, i;
@@ -271,7 +271,7 @@ void print_packet(int packet_len,const u_char *packet){
  * @param pkthdr
  * @param packet
  */
-void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet){
+void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
     struct ether_header *eptr;
     eptr = (struct ether_header *) packet;
     struct ip *ip;
