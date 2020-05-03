@@ -10,7 +10,6 @@
 #include <time.h>
 #include <netinet/tcp.h>
 #include <netinet/ip.h>
-#include <netinet/ip6.h>
 #include <netinet/udp.h>
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -18,7 +17,6 @@
 
 #define BUF_SIZE 1000
 #define PORT_MAX_BUFFER 20
-#define SIZE_ETHERNET 14
 #define LINE_LEN 16
 
 pcap_t * od;
@@ -26,14 +24,10 @@ static int udp_flag;
 static int tcp_flag;
 
 
-//TODO parsing only to tcp type ports, do it for udp also
-//  (udp or tcp) and port 53
-//  protocol extension?
-//  cleanup
-
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet);
 
-
+/** Checks if string is number
+ */
 int isNotNumber(char* s){
     for (int i = 0; i < strlen(s); i++)
         if (isdigit(s[i]) == 0)
@@ -41,17 +35,17 @@ int isNotNumber(char* s){
     return 0;
 }
 
+/** Prints help
+ */
 void print_help(){
     printf("./ipk-sniffer -i rozhraní [-p port] [--tcp|-t] [--udp|-u] [-n num]");
 }
 
 int main(int argc, char **argv) {
-
     char errbuf[PCAP_ERRBUF_SIZE];          /* Buffer for possible pcap errors */
     int c;                                  /* Argument parsing variable */
     char port[PORT_MAX_BUFFER] = "";        /* Port to be listened // on skus to aj bez port v stringu */
     int num_of_packets = 1;                /* Ammount of packets to be shown */
-    int digit_optind = 0;                   /* PREBYTOCNA SOMARINA */
     char interface[BUF_SIZE] = "";          /* Sniffing interface buffer */
     char filter[BUF_SIZE] = "";             /* Sniffing interface buffer */
     char *tmpptr = NULL;
@@ -66,8 +60,8 @@ int main(int argc, char **argv) {
      * inspirations from source: https://www.gnu.org/software/libc/manual/html_node/Getopt-Long-Option-Example.html (manpage)
      */
     while (1) {
-        int this_option_optind = optind ? optind : 1;
         int option_index = 0;
+        /*options file*/
         static struct option long_options[] = {
                 {"i",       required_argument,          0,  'i' },
                 {"p",       required_argument,          0,  'p' },
@@ -82,13 +76,14 @@ int main(int argc, char **argv) {
                 {0,0,                           0,  0 }
         };
 
-        c = getopt_long(argc, argv, "p:tun", long_options, &option_index);
+        /*parses arguments*/
+        c = getopt_long(argc, argv, "i:p:tunh", long_options, &option_index);
 
         //end of options detected
         if (c == -1){
             break;
         }
-
+        /*switch on arguments*/
         switch (c) {
             case 0:
                 break;
@@ -99,17 +94,21 @@ int main(int argc, char **argv) {
                 snprintf(interface, BUF_SIZE, "%s", optarg );
                 break;
             case 'p':
+                /*if port didnt receive number -> error*/
                 if(isNotNumber(optarg)){
                     fprintf(stderr, "ERROR -> got %s: Expected integer!", optarg);
                     exit(EXIT_FAILURE);
                 }
+                /*concatenating string for filtering*/
                 snprintf(port, PORT_MAX_BUFFER, "port %s", optarg);
                 break;
             case 'u':
             case 't':
                 break;
             case 'n':
+                /*how much packets should be processed*/
                 num_of_packets = (int)strtol(optarg, &tmpptr, 10);
+                /*checks if argument of -n wasnt a character*/
                 if(strcmp(tmpptr, "") != 0){
                     fprintf(stderr, "ERROR -> got %s: Expected integer!", optarg);
                     exit(EXIT_FAILURE);
@@ -119,10 +118,11 @@ int main(int argc, char **argv) {
                 //optopt argument pristup
                 exit(EXIT_FAILURE);
             default:
-                printf("?? getopt returned character code 0%o ??\n", c);
+                printf("Getopt returned character code 0%o ??\n", c);
         }
     }
 
+    /*unsupported arguments was passed*/
     if (optind < argc) {
         fprintf(stderr, "ERROR -> Non-option ARGV-element/s entered: ");
         while (optind < argc)
@@ -131,27 +131,24 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    /*if interface wasnt passed*/
     if(strcmp(interface, "") != 0){
-      /*  if (pcap_lookupnet(interface, &net, &mask, errbuf) == -1) {
-            fprintf(stderr, "ERROR -> Can't determine IPv4 network number and mask for device %s\n", interface);
-            net = 0;
-            mask = 0;
-        }*/
 
-        //1000 timeout tcpdump uses this ammount
+        //Open handle for capturing
         if(!(od = pcap_open_live(interface, BUFSIZ, 1, 1000, errbuf))){
             printf("ERROR -> got %s ", errbuf);
             exit(EXIT_FAILURE);
         }
 
 
-        //https://www.tcpdump.org/linktypes.html on my device not supported by utun0
+        //Supporting only devices with ETHERNET_PROTOCOL
         link_type = pcap_datalink(od);
         if(link_type != DLT_EN10MB){
             fprintf(stderr, "Device %s doesn't provide Ethernet headers - not supported\n", interface);
             exit(EXIT_FAILURE);
         }
 
+        /*apply filters*/
         if((tcp_flag && udp_flag) || (!tcp_flag && !udp_flag)){
             sprintf(filter, "(udp or tcp) ");
         }
@@ -166,22 +163,26 @@ int main(int argc, char **argv) {
             strcat(filter, port);
         }
 
+        /*compile handle with used filter*/
         if (pcap_compile(od, &fp, filter, 0, net) == -1) {
             fprintf(stderr, "Couldn't parse filter %s: %s\n", port, pcap_geterr(od));
             exit(EXIT_FAILURE);
         }
 
+        /*set used filter*/
         if (pcap_setfilter(od, &fp) == -1) {
             fprintf(stderr, "Couldn't install filter %s: %s\n", port, pcap_geterr(od));
             exit(EXIT_FAILURE);
         }
 
+        /*loop over processing packets*/
         pcap_loop(od, num_of_packets, process_packet, NULL);
         pcap_close(od);
     }
     else{
         pcap_if_t *alldevs, *dev;
         int i = 2;
+        /*finds all active interfaces*/
         if(pcap_findalldevs(&alldevs, errbuf) == -1){
             fprintf(stderr,"ERROR -> : %s\n", errbuf);
             exit(EXIT_FAILURE);
@@ -200,24 +201,42 @@ int main(int argc, char **argv) {
 
 }
 
-
+/** Prints packet's ascii representation
+ *
+ * @param packet_len length of packet
+ * @param pkthdr packet header struct
+ * @param packet packet
+ */
 void print_packet_ascii(int n, int i,const u_char *packet, int print_counter){
     if (print_counter == 8) {
         printf(" ");
     }
-    if (isprint(packet[i - n]))
+    if (isprint(packet[i - n])){
         printf("%c", packet[i - n]);
-    else
+    }
+    else{
         printf(".");
+    }
 }
 
+/** Prints packet
+ *
+ * @param packet_len length of packet
+ * @param pkthdr packet header struct
+ * @param packet packet
+ */
 void print_packet(int packet_len,const u_char *packet){
-    //z dôvodu hraničiacich bytov
+    /*counter of  printed bytes in hexa*/
     int print_bytes_counter = 0;
+    /*iterators*/
     int k = 0, i;
 
+    /*print whole packet*/
     for (i = 0; i <= packet_len; i++) {
+        /*in case of ending bytes that are not equal to LINE_LEN
+         * flag is needed to output format differently than when its equal to LINE_LEN*/
         bool approaching_end = (packet_len - i == 0) && (print_bytes_counter % LINE_LEN != 0);
+        /*counter of  printed bytes in ascii*/
         int print_ascii_counter = 0;
         if ((i % LINE_LEN) == 0 || approaching_end) {
             if(i != 0){
@@ -265,41 +284,30 @@ void print_packet(int packet_len,const u_char *packet){
     }
 }
 
-/**
+/** Processes packet, structure conversions
  *
- * @param user
- * @param pkthdr
- * @param packet
+ * @param user unnecessary argument
+ * @param pkthdr header of the packet
+ * @param packet processed packet
  */
 void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet){
-    struct ether_header *eptr;
-    eptr = (struct ether_header *) packet;
-    struct ip *ip;
-    struct tcphdr *tcp;
-    struct udphdr *udp;
-    struct hostent *hp;
-    char *source_addr;
-    char *destination_addr;
-    int destination_port, source_port;
-    char buff[BUF_SIZE];
-    short family;
-    u_int size_ip;
+    struct ip *ip;          /*ip header structure*/
+    struct tcphdr *tcp;     /*tcp header structure*/
+    struct udphdr *udp;     /*udp header structure*/
+    struct hostent *hp;     /*hosts structure*/
+    char *source_addr;      /*source address string*/
+    char *destination_addr; /*destination address string*/
+    int destination_port, source_port; /*ports*/
+    char buff[BUF_SIZE];    /*string containing time stamp*/
+
+    /*Conversion of packet header's timeval structure to needed format */
     struct tm* tm_info = localtime(&pkthdr->ts.tv_sec);
     strftime(buff, 100, "%H:%M:%S", tm_info);
 
-    //typecast packet to ip header
+    /*typecast packet to ip header*/
     ip = (struct ip*)(packet + sizeof(struct ether_header));
-    if(ntohs(eptr->ether_type) == ETHERTYPE_IPV6){
-        family = AF_INET6;
-    }
-    else{
-        family = AF_INET;
-    }
 
-    const struct sockaddr_in sockaddr_src = { .sin_family = family, .sin_addr = ip->ip_src};
-    const struct sockaddr_in sockaddr_dest = { .sin_family = family, .sin_addr = ip->ip_dst};
-
-    //typecast packet to tcp/udp header according to ip's protocol
+    /*typecast packet to tcp/udp header according to ip's protocol*/
     if(ip->ip_p == IPPROTO_TCP){
         tcp = (struct tcphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
         destination_port = ntohs(tcp->th_dport);
@@ -310,24 +318,15 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
         destination_port = ntohs(udp->uh_dport);
         source_port = ntohs(udp->uh_sport);
     }
-/*
-    if(getnameinfo((struct sockaddr*)&sockaddr_src, sizeof(struct sockaddr), source_addr, BUF_SIZE, 0, 0, 0)){
-        strcat(source_addr, inet_ntoa(ip->ip_src));
-    }
-    if(getnameinfo((struct sockaddr*)&sockaddr_dest, sizeof(struct sockaddr), destination_addr, BUF_SIZE, 0, 0, 0)){
-         strcat(destination_addr, inet_ntoa(ip->ip_dst));
-    }
-*/
 
-    //try to resolve source IP address
-    if((hp = gethostbyaddr((char *) &ip->ip_src, sizeof(ip->ip_src), family)) == NULL){
+    /*try to resolve source IP addresses*/
+    if((hp = gethostbyaddr((char *) &ip->ip_src, sizeof(ip->ip_src), AF_INET)) == NULL){
         source_addr = inet_ntoa(ip->ip_src);
     }
     else{
         source_addr = hp->h_name;
     }
-
-    if((hp = gethostbyaddr((char *) &ip->ip_dst, sizeof(ip->ip_dst), family)) == NULL){
+    if((hp = gethostbyaddr((char *) &ip->ip_dst, sizeof(ip->ip_dst), AF_INET)) == NULL){
         destination_addr = inet_ntoa(ip->ip_dst);
     }
     else{
