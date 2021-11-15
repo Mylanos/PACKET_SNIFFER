@@ -10,8 +10,3 @@ Priklady spustenia sudo ./sniffer -i enp0s3 --n 10 --p 53
                         ./sniffer -i enp0s3 --n 10 --p 22
                         ./sniffer -i enp0s3 --n 10 --p 22
                         
-Odovzdane subory    Makefile
-                    main.c
-                    main.h
-                    README.md
-                    IPK2.pdf
