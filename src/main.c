@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    /*unsupported arguments was passed*/
+    /*unsupported arguments were passed*/
     if (optind < argc) {
         fprintf(stderr, "ERROR -> Non-option ARGV-element/s entered: ");
         while (optind < argc)
@@ -300,7 +300,7 @@ void process_packet(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char
     int destination_port, source_port; /*ports*/
     char buff[BUF_SIZE];    /*string containing time stamp*/
 
-    /*Conversion of packet header's timeval structure to needed format */
+    /*Conversion of packet headers timeval structure to needed format */
     struct tm* tm_info = localtime(&pkthdr->ts.tv_sec);
     strftime(buff, 100, "%H:%M:%S", tm_info);
 

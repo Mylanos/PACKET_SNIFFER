@@ -38,6 +38,9 @@ cmake_force:
 # The shell in which to execute make rules.
 SHELL = /bin/sh
 
+mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
+current_dir := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
+
 # The CMake executable.
 CMAKE_COMMAND = /home/student/Downloads/clion/clion-2020.1/bin/cmake/linux/bin/cmake
 
